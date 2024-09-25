@@ -1,0 +1,26 @@
+// メッシュの生成
+mesh Th = square(10, 10); // 10x10の格子による正方形領域
+
+// 関数空間の定義
+fespace Vh(Th, P1); // 1次元有限要素空間
+
+// 関数の定義
+Vh u, v;
+
+// 2次元積分用のランプ化された質量行列の定義
+varf massLumped(u, v) =
+    int2d(Th, qft=qf1pTlump)(u * v); // ランプ化された質量行列
+
+// 質量行列の組み立て
+matrix M = massLumped(Vh, Vh);
+
+// 質量行列の出力
+cout << "Lumped mass matrix M:" << endl;
+
+// 行列の各要素を表示
+for (int i = 0; i < M.n; i++) {
+    for (int j = 0; j < M.m; j++) {
+        if (abs(M(i,j)) > 1e-12) // ゼロに近い値を無視して出力を簡潔に
+            cout << "M(" << i << "," << j << ") = " << M(i,j) << endl;
+    }
+}
