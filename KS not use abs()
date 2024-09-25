@@ -1,0 +1,153 @@
+
+real d1 = 1.0, d2 = 1.0, alpha = 1.0, beta = 1.0;
+real chi = 1.0, mu = 9.0e-2;
+
+macro f(u,v) (u/(1+v)) //
+//macro f(u,v) (u) //
+macro fu(u,v) ((dx(u)*dx(u)+dy(u)*dy(u))/((1+u)*(1+u))-2*pi*pi*u*u/(1+u)) //
+macro fv(u,v) (2*pi*pi*v) //
+
+real dt = 1.0e-8;
+int imax = 10000;
+int NumnodeA, NumnodeB;
+
+real sabunMax, vsabunMax, usabunMax;
+
+mesh Th = square(25, 25, [-0.5 + x, -0.5 + y]);
+fespace Vh2(Th, P3);
+Vh2 du, dv, u, v, eta1, eta2, uold, vold, uk2, vk2, uk1, vk1, uk, vk,duk,dvk;
+
+NumnodeA = Th.nv;
+NumnodeB = Th.nv;
+
+real[int] vsabun(NumnodeA);  
+real[int] usabun(NumnodeB); 
+
+real t = 0;
+int i , j;
+
+// 問題の定義
+problem KS1(uk2, eta1, solver = UMFPACK, init = 0)
+    = int2d(Th)(uk2 * eta1
+                + dt * d1 * (dx(uk2) * dx(eta1) + dy(uk2) * dy(eta1)))
+    - int2d(Th)(dt * chi * f(uk1, vk1) * (dx(vk2) * dx(eta1) + dy(vk2) * dy(eta1))
+                + uold * eta1//);
+                + dt * fu(uold, vk1) * eta1);
+problem KS2(vk2, eta2, solver = UMFPACK, init = 0)
+    = int2d(Th)(vk2 * eta2 
+                + dt * d2 * (dx(vk2) * dx(eta2) + dy(vk2) * dy(eta2) )
+                + dt * beta * (vk2 * eta2 ))
+            
+    + int2d(Th)(dt * mu * (dx(uk1) * dx(eta2) + dy(uk1) * dy(eta2))
+                - dt * alpha * uk1 * eta2
+                - vold * eta2//);
+                - dt * fv(uk1, vold) * eta2);
+
+// 初期条件
+u = cos(pi * x) * cos(pi * y);
+v = cos(pi * x) * cos(pi * y);
+//u = 1000*exp(-100*(x*x+y*y));
+//v = 500*exp(-50*(x*x+y*y));
+uk=exp(-2*pi*pi*t)*cos(pi * x) * cos(pi * y);
+vk=exp(-2*pi*pi*t)*cos(pi * x) * cos(pi * y);
+uk1 = u;
+vk1 = v;
+int l=0;
+int lmax=10;
+/*
+for (i = 1; i <= imax; i++) {
+    t = dt * i;
+
+    sabunMax = 1;
+    uold = u;
+    vold = v;
+    l=0;
+    while (sabunMax > 1e-8 && l<lmax) {
+        
+        KS2; // vk2を解く
+        KS1; // uk2を解く
+
+        // 解を更新し、差分を計算
+        for(j = 0; j < NumnodeA; j++) {
+            duk=uk1-uk2;
+            dvk=vk1-vk2;
+            vsabun=duk[].linfty/uk1[].linfty;
+            usabun=duk[].linfty/vk1[].linfty;
+            //vsabun(j) = abs(vk2[][j] - vk1[][j])/abs(vk1[][j]);
+            //usabun(j) = abs(uk2[][j] - uk1[][j])/abs(uk1[][j]);
+        }
+        
+        vsabunMax = vsabun.linfty;
+        usabunMax = usabun.linfty;
+        sabunMax = max(vsabunMax, usabunMax);
+
+        // 次の反復のために古い値を更新
+        vk1 = vk2;
+        uk1 = uk2;
+        l=l++;
+        
+    }
+
+    // 収束後の最終値を更新
+    v = vk1;
+    u = uk1;
+
+    // プロット
+    cout << "i = " << i << ", t = " << t << ", sabunMax = " << sabunMax << endl;
+    plot(u, dim = 3, cmm = "u : " + i + " : t=" + t, value = true, fill = 1, wait = 0);
+}*/
+// 必要な定数や変数の定義は元のコードを基にします
+
+real L2Erroru, L2Errorv;
+
+// 時間ステップのループ内で誤差を計算
+for (i = 1; i <= imax; i++) {
+    t = dt * i;
+
+    sabunMax = 1;
+    uold = u;
+    vold = v;
+    l = 0;
+
+    while (sabunMax > 1e-8 && l < lmax) {
+
+        KS2; // vk2を解く
+        KS1; // uk2を解く
+
+        // 解を更新し、差分を計算
+        for (j = 0; j < NumnodeA; j++) {
+            duk = uk1 - uk2;
+            dvk = vk1 - vk2;
+            vsabun = duk[].linfty / uk1[].linfty;
+            usabun = duk[].linfty / vk1[].linfty;
+        }
+
+        vsabunMax = vsabun.linfty;
+        usabunMax = usabun.linfty;
+        sabunMax = max(vsabunMax, usabunMax);
+
+        // 次の反復のために古い値を更新
+        vk1 = vk2;
+        uk1 = uk2;
+        l = l + 1;
+    }
+
+    // 収束後の最終値を更新
+    v = vk1;
+    u = uk1;
+
+    // 厳密解を計算 (ここでは uk と vk は厳密解として定義されている)
+    uk = exp(-2 * pi * pi * t) * cos(pi * x) * cos(pi * y);
+    vk = exp(-2 * pi * pi * t) * cos(pi * x) * cos(pi * y);
+
+    // L2ノルムによる誤差の計算
+    L2Erroru = sqrt(int2d(Th)((u - uk) * (u - uk)));
+    L2Errorv = sqrt(int2d(Th)((v - vk) * (v - vk)));
+
+    // 結果を出力
+    cout << "i = " << i << ", t = " << t << ", L2Erroru = " << L2Erroru << ", L2Errorv = " << L2Errorv << endl;
+
+    // プロット
+    plot(u, dim = 3, cmm = "u : " + i + " : t=" + t, value = true, fill = 1, wait = 0);
+    //plot(v, dim = 3, cmm = "v : " + i + " : t=" + t, value = true, fill = 1, wait = 0);
+}
