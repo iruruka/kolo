@@ -1,0 +1,98 @@
+real d1 = 1.0, d2 = 1.0, alpha = 1.0, beta = 1.0;
+real chi = 1.0, mu = 0;
+real tau = sqrt(2)/256, eps = 0.9;
+real kh = sqrt(2)/100;
+
+macro f(u,v) (u) //
+macro fu(u,v) ((dx(u)*dx(u)+dy(u)*dy(u))/((1+u)*(1+u))-2*pi*pi*u*u/(1+u)) //
+macro fv(u,v) (2*pi*pi*v) //
+
+real dt = 1.0e-6;
+int imax = 10000;
+int NumnodeA;
+
+real sabunMax, vsabunMax, usabunMax;
+
+mesh Th = square(100, 100, [-0.5 + x, -0.5 + y]);
+fespace Vh2(Th, P1);
+Vh2 du, dv, u, v, eta1, eta2, uold, vold, uk2, vk2, uk1, vk1,phi;
+
+NumnodeA = Th.nv;
+
+real[int] vsabun(NumnodeA);
+real[int] usabun(NumnodeA); 
+
+real t = 0;  // 時間の初期値
+int i , j;
+
+// 問題の定義
+problem KS1(uk2, eta1, solver = UMFPACK, init = 0)
+    = int2d(Th)(uk2 * eta1
+                + dt * d1 * (dx(uk2) * dx(eta1) + dy(uk2) * dy(eta1)))
+    - int2d(Th)(dt * chi * f(uk1, vk1) * (dx(vk2) * dx(eta1) + dy(vk2) * dy(eta1))
+                + uold * eta1);
+
+problem KS2(vk2, eta2, solver = UMFPACK, init = 0)
+    = int2d(Th)(vk2 * eta2 
+                + dt * d2 * (dx(vk2) * dx(eta2) + dy(vk2) * dy(eta2) )
+                + dt * beta * (vk2 * eta2 ))
+            
+    + int2d(Th)(dt * mu * (dx(uk1) * dx(eta2) + dy(uk1) * dy(eta2))
+                - dt * alpha * uk1 * eta2
+                - vold * eta2);
+
+// 初期条件
+u = 1000*exp(-100*(x*x+y*y));
+//u = 1000*exp(-100*((x+0.25)*(x+0.25)+(y+0.25)*(y+0.25)));
+//u = 1000*exp(-10000*((x+0.25)*(x+0.25)+(y+0.25)*(y+0.25)));
+v = 500*exp(-50*(x*x+y*y));
+uk1 = u;
+vk1 = v;
+
+int l = 0;
+int lmax = 10;
+real gradNorm;
+
+for (i = 1; i <= imax; i++) {
+    // 勾配ノルムの計算と dt の再計算
+    phi = 5*v*v;
+    gradNorm = phi[].linfty;
+    dt = min(tau, eps * kh / (4 * gradNorm));
+
+    sabunMax = 1;
+    uold = u;
+    vold = v;
+    l = 0;
+
+    // ニュートン法での反復
+    while (sabunMax > 1e-8 && l < lmax) {
+        KS2; // vk2 を解く
+        KS1; // uk2 を解く
+
+        // 差分計算
+        for (j = 0; j < NumnodeA; j++) {
+            vsabun(j) = abs(vk2[][j] - vk1[][j]);
+            usabun(j) = abs(uk2[][j] - uk1[][j]);
+        }
+        
+        vsabunMax = vsabun.linfty;
+        usabunMax = usabun.linfty;
+        sabunMax = max(vsabunMax, usabunMax);
+
+        // 次の反復のために更新
+        vk1 = vk2;
+        uk1 = uk2;
+        l = l + 1;
+    }
+
+    // 収束後の最終値を更新
+    v = vk1;
+    u = uk1;
+
+    // 時間を進める
+    t = t + dt;
+
+    // プロット
+    cout << "i = " << i << ", t = " << t << ", dt = " << dt << ", sabunMax = " << sabunMax << endl;
+    plot(u, dim = 3, cmm = "u : " + i + " : t=" + t, value = true, fill = 1, wait = 0);
+}
