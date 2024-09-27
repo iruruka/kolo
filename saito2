@@ -1,0 +1,49 @@
+real Du = 1.0, Dv = 1.0, k = 0.1, k1 = 0.1, k2 = 0.01;
+real tau = sqrt(2) / 256, eps = 0.9;
+real kh = sqrt(2)/100;
+real dt = 1.0e-6;
+int imax = 10000;
+
+mesh Th = square(128, 128);
+fespace Vh1(Th, P1);
+Vh1 u, chi, uold, phi;
+Vh1 fv, v, eta, vold;
+
+problem KS1(u, chi, solver=UMFPACK, init=0)
+    = int2d(Th, qft=qf1pTlump)(u * chi)
+    - int2d(Th, qft=qf1pTlump)(uold * chi)
+    + int2d(Th)(dt * Du * (dx(u) * dx(chi) + dy(u) * dy(chi)))
+    - int2d(Th, qft=qf1pTlump)(dt * (uold * dx(vold) * dx(chi) + dy(vold) * dy(chi)));
+
+problem KS2(vold, eta, solver=UMFPACK, init=0)
+    = int2d(Th)(Dv * (dx(vold) * dx(eta) + dy(vold) * dy(eta)))
+    + int2d(Th, qft=qf1pTlump)(k1 * vold * eta);
+    - int2d(Th, qft=qf1pTlump)(k2 * uold * eta);
+
+//u = 1000*(exp(-100*((x-0.25)*(x-0.25)+(y-0.25)*(y-0.25)))+exp(-100*((x-0.75)*(x-0.75)+(y-0.4)*(y-0.4)))+exp(-100*((x-0.4)*(x-0.4)+(y-0.75)*(y-75))));
+//v = 500*(exp(-50*((x-0.25)*(x-0.25)+(y-0.25)*(y-0.25)))+exp(-50*((x-0.75)*(x-0.75)+(y-0.4)*(y-0.4)))+exp(-50*((x-0.4)*(x-0.4)+(y-0.75)*(y-75))));
+//u = 1000*exp(-100*((x-0.5)*(x-0.5)+(y-0.5)*(y-0.5)));
+//v = 500*exp(-50*((x-0.5)*(x-0.5)+(y-0.5)*(y-0.5)));
+u = 0.3*exp(-100*((x-0.25)*(x-0.25)+(y-0.25)*(y-0.25)));
+//vold = 0.3*exp(-100*sqrt((x-0.25)*(x-0.25)+(y-0.25)*(y-0.25)));
+
+// 時間ステップループ
+int i = 0;
+real t = 0;
+real gradNorm;
+for (i = 1; i <= imax; i++) {
+    gradNorm = vold[].linfty;
+    //dt = min(tau, eps * kh / (4 * gradNorm));
+    t = t + dt;
+    uold = u;
+
+    // Keller-Segel方程式を解く
+    KS2;
+    KS1;
+
+    // 結果を表示
+   
+        cout << "i = " << i << ", t = " << t << ", dt = " << dt << endl;
+        plot(u, dim=3, cmm="u : " + i + " : t=" + t, value=true, fill=1, wait=0);
+    
+}
