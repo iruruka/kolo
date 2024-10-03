@@ -1,0 +1,21 @@
+mesh Th = square(64, 64, [-0.5 + x, -0.5 + y]);
+fespace Vh(Th, P2);
+Vh u;
+u = 1000 * exp(-100 * (x*x + y*y));
+
+// 出力用ファイルを開く
+ofstream fout("u0.csv");
+
+// CSV形式で座標とuの値を出力
+for (int i = 0; i < Th.nv; i++) {
+    // 各頂点の座標
+    real xval = Th(i).x;
+    real yval = Th(i).y;
+    
+    // 座標における関数 u の値
+    real uval = u(xval, yval);
+
+    // CSVフォーマットで書き込み
+    fout << xval << "," << yval << "," << uval << endl;
+}
+
