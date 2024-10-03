@@ -1,0 +1,40 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+from matplotlib.animation import FuncAnimation, FFMpegWriter
+from mpl_toolkits.mplot3d import Axes3D
+
+# ファイル数とベースファイル名の設定
+num_files = 101  # u0.csv から u100.csv までの 101 ファイル
+file_base = '/mnt/u'
+
+# 3Dプロットの設定
+fig = plt.figure(figsize=(10, 8))
+ax = fig.add_subplot(111, projection='3d')
+
+# 軸のラベルを設定
+ax.set_xlabel('x')
+ax.set_ylabel('y')
+ax.set_zlabel('u')
+
+# アニメーション用の関数
+def update(frame):
+    ax.clear()  # 前フレームのデータをクリア
+    data = pd.read_csv(f'{file_base}{frame}.csv', header=None)
+    x = data.iloc[:, 0].values
+    y = data.iloc[:, 1].values
+    z = data.iloc[:, 2].values
+    ax.plot_trisurf(x, y, z, cmap='viridis', edgecolor='none')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('u')
+    ax.set_title(f'Time step: {frame}')
+
+# アニメーションの作成
+anim = FuncAnimation(fig, update, frames=num_files, interval=100)
+
+# MP4形式で動画を保存する
+writer = FFMpegWriter(fps=10, metadata=dict(artist='Me'), bitrate=1800)
+anim.save("/mnt/solution_animation.mp4", writer=writer)
+
+plt.show()
