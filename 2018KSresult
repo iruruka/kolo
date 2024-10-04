@@ -56,6 +56,9 @@ int l=0;
 int lmax=10;
 
 real L2Erroru, L2Errorv;
+// 結果を保存するCSVファイルをオープン
+ofstream massvalue("massvalue.csv");
+massvalue << "Step, Mass, Min\n"; // ヘッダーを追加
 
 // 時間ステップのループ内で誤差を計算
 for (i = 1; i <= imax; i++) {
@@ -111,7 +114,7 @@ for (i = 1; i <= imax; i++) {
     // プロット
     plot(u,dim = 3, cmm = "u : " + i + " : t=" + t, value = true, fill = 1, wait = 0);
 
-    ofstream fout("KScsv/KS"+i+".csv");
+    ofstream fout("KSdata/KS"+i+".csv");
 
 // CSV形式で座標とuの値を出力
     for (int i = 0; i < Th.nv; i++) {
@@ -120,6 +123,14 @@ for (i = 1; i <= imax; i++) {
         real uval = u(xval, yval);
         fout << xval << "," << yval << "," << uval << endl;
     }
+    
+    real mass = int2d(Th)(u);
+    real umin = u[].min;
+    cout << "i = " << i << ", t = " << t << endl;
+    cout << "mass = " << mass << ", min = " << umin << endl;
+
+    // CSVファイルに書き込み
+    massvalue << i << ", " << mass << ", " << umin << "\n"; 
     /*
     ofstream sol("KScsv/KS"+i+".csv");
     for(int j=0;j<Th.nv;j++){
