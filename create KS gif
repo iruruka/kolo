@@ -1,0 +1,51 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.animation import FuncAnimation
+
+# アニメーション用の設定
+fig = plt.figure(figsize=(10, 8))
+ax = fig.add_subplot(111, projection='3d')
+
+# 軸ラベルの設定
+ax.set_xlabel('x')
+ax.set_ylabel('y')
+ax.set_zlabel('$u_h^{(0)}$')
+
+# プロットの初期設定
+def init():
+    ax.clear()
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('$u_h^{(0)}$')
+
+# 各フレームの更新処理
+def update(frame):
+    ax.clear()
+    
+    # CSVファイルのパスを指定
+    file_path = f'C:/Users/hirosenaoyuki/Documents/freefem/KSdata/KS{frame}.csv'
+    
+    # CSVファイルからデータを読み込む
+    data = pd.read_csv(file_path, header=None)
+    x = data.iloc[:, 0].values
+    y = data.iloc[:, 1].values
+    z = data.iloc[:, 2].values
+    
+    # 三次元散布図としてプロット
+    ax.plot_trisurf(x, y, z, cmap='viridis', edgecolor='none')
+    
+    # 軸ラベルの再設定（毎フレームで）
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('$u_h^{(0)}$')
+
+# アニメーションの作成
+anim = FuncAnimation(fig, update, frames=range(0, 51), init_func=init, repeat=False)
+
+# アニメーションをGIF形式で保存
+anim.save('C:/Users/hirosenaoyuki/Documents/freefem/KSdata/video/KS_animation.gif', writer='pillow', fps=5)
+
+# アニメーションの表示
+plt.show()
