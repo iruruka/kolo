@@ -1,0 +1,83 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.animation import FuncAnimation
+from matplotlib import cm
+
+# アニメーション用の設定
+fig = plt.figure(figsize=(10, 8))
+ax = fig.add_subplot(111, projection='3d')
+
+# 軸ラベルの設定（小さいフォントサイズ）
+ax.set_xlabel('x', fontsize=12)
+ax.set_ylabel('y', fontsize=12)
+ax.set_zlabel('$u_h^{(0)}$', fontsize=12)
+
+# 軸の目盛りの文字サイズを大きく設定
+ax.tick_params(axis='x', labelsize=14)
+ax.tick_params(axis='y', labelsize=14)
+ax.tick_params(axis='z', labelsize=16)
+
+# ラベルの位置を調整
+ax.xaxis.labelpad = 20  # x軸ラベルを20ポイント離す
+ax.yaxis.labelpad = 20  # y軸ラベルを20ポイント離す
+ax.zaxis.labelpad = 20  # z軸ラベルを20ポイント離す
+
+# プロットの初期設定
+def init():
+    ax.clear()
+    ax.set_xlabel('x', fontsize=12)
+    ax.set_ylabel('y', fontsize=12)
+    ax.set_zlabel('$u_h^{(0)}$', fontsize=12)
+    ax.tick_params(axis='x', labelsize=14)
+    ax.tick_params(axis='y', labelsize=14)
+    ax.tick_params(axis='z', labelsize=16)
+    
+    # ラベルの位置を調整
+    ax.xaxis.labelpad = 20  # x軸ラベルを20ポイント離す
+    ax.yaxis.labelpad = 20  # y軸ラベルを20ポイント離す
+    ax.zaxis.labelpad = 15  # z軸ラベルを20ポイント離す
+
+# 各フレームの更新処理
+def update(frame):
+    ax.clear()
+    
+    # CSVファイルのパスを指定
+    file_path = f'C:/Users/srhky/Documents/freefem/KSdata/KS{frame}.csv'
+    
+    # CSVファイルからデータを読み込む
+    data = pd.read_csv(file_path, header=None)
+    x = data.iloc[:, 0].values
+    y = data.iloc[:, 1].values
+    z = data.iloc[:, 2].values
+    
+    # 三次元散布図としてプロット (カラーマップの使用)
+    trisurf = ax.plot_trisurf(x, y, z, cmap='viridis', edgecolor='none')
+    
+    # カラーバーを毎回作成する（必要に応じてサイズや位置を調整）
+    #fig.colorbar(trisurf, ax=ax, shrink=0.5, aspect=10)
+    
+    # 軸ラベルの再設定（毎フレームで）
+    ax.set_xlabel('x', fontsize=12)
+    ax.set_ylabel('y', fontsize=12)
+    ax.set_zlabel('$u_h^{(n)}$', fontsize=12)
+    
+    # 軸の目盛りの文字サイズを大きく設定
+    ax.tick_params(axis='x', labelsize=14)
+    ax.tick_params(axis='y', labelsize=14)
+    ax.tick_params(axis='z', labelsize=16)
+    
+    # ラベルの位置を調整
+    ax.xaxis.labelpad = 20  # x軸ラベルを20ポイント離す
+    ax.yaxis.labelpad = 20  # y軸ラベルを20ポイント離す
+    ax.zaxis.labelpad = 15  # z軸ラベルを20ポイント離す
+
+# アニメーションの作成
+anim = FuncAnimation(fig, update, frames=range(0, 80), init_func=init, repeat=False)
+
+# アニメーションをGIF形式で保存
+anim.save('C:/Users/srhky/Documents/freefem/KSdata/video/KS_animation.gif', writer='pillow', fps=5)
+
+# アニメーションの表示
+plt.show()
