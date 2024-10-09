@@ -1,0 +1,39 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm
+
+# CSVファイルからデータを読み込む
+data = pd.read_csv('KS0.csv', header=None)
+
+# x, y, zの値を取得
+x = data.iloc[:, 0].values
+y = data.iloc[:, 1].values
+z = data.iloc[:, 2].values
+
+# 3Dプロットの設定
+fig = plt.figure(figsize=(10, 8))
+ax = fig.add_subplot(111, projection='3d')
+
+# 三次元散布図としてプロット (カラーマップを利用)
+trisurf = ax.plot_trisurf(x, y, z, cmap='viridis', edgecolor='none')
+
+# 軸ラベルの設定 (小さいフォント)
+ax.set_xlabel('X', fontsize=10)
+ax.set_ylabel('Y', fontsize=10)
+ax.set_zlabel('Z', fontsize=10)
+
+# 軸目盛りのフォントサイズを大きく設定
+ax.tick_params(axis='x', labelsize=14)
+ax.tick_params(axis='y', labelsize=14)
+ax.tick_params(axis='z', labelsize=14)
+
+# カラーバーを追加
+fig.colorbar(trisurf, ax=ax, shrink=0.6, aspect=5)  # カラーバーのサイズ調整
+
+# 画像ファイルとして保存 (PNG形式)
+plt.savefig('KS0_plot_with_colorbar.png', format='png', dpi=300)
+
+# グラフを表示
+plt.show()
