@@ -4,6 +4,7 @@ import pandas as pd
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.animation import FuncAnimation
 from matplotlib import cm
+import matplotlib.ticker as mticker
 
 # アニメーション用の設定
 fig = plt.figure(figsize=(10, 8))
@@ -17,7 +18,7 @@ ax.set_zlabel('$u_h^{(0)}$', fontsize=12)
 # 軸の目盛りの文字サイズを大きく設定
 ax.tick_params(axis='x', labelsize=14, pad=5)  # x軸ラベルを10ポイント離す
 ax.tick_params(axis='y', labelsize=14, pad=5)  # y軸ラベルを10ポイント離す
-ax.tick_params(axis='z', labelsize=14, pad=10)  # z軸ラベルを10ポイント離す
+ax.tick_params(axis='z', labelsize=16, pad=20)  # z軸ラベルを10ポイント離す
 
 # プロットの初期設定
 def init():
@@ -27,14 +28,18 @@ def init():
     ax.set_zlabel('$u_h^{(0)}$', fontsize=12)
     ax.tick_params(axis='x', labelsize=14, pad=5)  # x軸ラベルを10ポイント離す
     ax.tick_params(axis='y', labelsize=14, pad=5)  # y軸ラベルを10ポイント離す
-    ax.tick_params(axis='z', labelsize=14, pad=10)  # z軸ラベルを10ポイント離す
+    ax.tick_params(axis='z', labelsize=14, pad=15)  # z軸ラベルを10ポイント離す
+    
+    # z軸のメモリをスケーリングしないように設定
+    ax.zaxis.set_major_formatter(mticker.ScalarFormatter(useOffset=False))
+    ax.zaxis.get_major_formatter().set_scientific(False)
 
 # 各フレームの更新処理
 def update(frame):
     ax.clear()
     
     # CSVファイルのパスを指定
-    file_path = f'C:/Users/srhky/Documents/freefem/KSdata/KS{frame}.csv'
+    file_path = f'C:/Users/hirosenaoyuki/Documents/freefem/KSdata/KS{frame}.csv'
     
     # CSVファイルからデータを読み込む
     data = pd.read_csv(file_path, header=None)
@@ -45,6 +50,10 @@ def update(frame):
     # 三次元散布図としてプロット (カラーマップの使用)
     trisurf = ax.plot_trisurf(x, y, z, cmap='viridis', edgecolor='none')
     
+    # z軸のメモリをスケーリングしないように設定
+    ax.zaxis.set_major_formatter(mticker.ScalarFormatter(useOffset=False))
+    ax.zaxis.get_major_formatter().set_scientific(False)
+
     # カラーバーを毎回作成する（必要に応じてサイズや位置を調整）
     #fig.colorbar(trisurf, ax=ax, shrink=0.5, aspect=10)
     
@@ -54,17 +63,17 @@ def update(frame):
     ax.set_zlabel('$u_h^{(n)}$', fontsize=12)
     
     # 軸の目盛りの文字サイズを大きく設定
-    ax.tick_params(axis='x', labelsize=14, pad=5)  # x軸ラベルを10ポイント離す
-    ax.tick_params(axis='y', labelsize=14, pad=5)  # y軸ラベルを10ポイント離す
-    ax.tick_params(axis='z', labelsize=14, pad=10)  # z軸ラベルを10ポイント離す
+    ax.tick_params(axis='x', labelsize=14, pad=5)
+    ax.tick_params(axis='y', labelsize=14, pad=5)
+    ax.tick_params(axis='z', labelsize=16, pad=13)
 
-    ax.zaxis.labelpad = 20  # z軸ラベルを20ポイント離す
+    ax.zaxis.labelpad = 28  # z軸ラベルを20ポイント離す
 
 # アニメーションの作成
-anim = FuncAnimation(fig, update, frames=range(0, 80), init_func=init, repeat=False)
+anim = FuncAnimation(fig, update, frames=range(0, 96), init_func=init, repeat=False)
 
 # アニメーションをGIF形式で保存
-anim.save('C:/Users/srhky/Documents/freefem/KSdata/video/KS_animation.gif', writer='pillow', fps=5)
+anim.save('C:/Users/hirosenaoyuki/Documents/freefem/KSdata/video/KS_animation.gif', writer='pillow', fps=5)
 
 # アニメーションの表示
 plt.show()
