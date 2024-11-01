@@ -1,0 +1,42 @@
+real tau=1.0e-1, eps=1.0e-2, alp=0.25, gam=10.0;
+real du=eps/tau, dv=1.0;
+real r0=0.7;
+
+macro f(u,v) ((u*(u-alp)*(1.0-u)-v)/eps/tau) //EOM
+macro g(u,v) (u-gam*v) //EOM
+
+real dt=1.0e-3;
+int imax=20000;
+
+mesh Th=square(100,100,[10*x,10*y]);
+fespace Vh(Th,P1);
+Vh u,chi,uold, b1;
+Vh v,eta,vold, b2;
+
+int i=0;
+real t=0;
+
+   u=1.0*bool((x*x+y*y) < r0*r0);
+   v=0.0;
+
+   for (i=1;i<=imax;i++)
+   {
+
+     t=dt*i;
+     uold=u; vold=v;
+    varf A(u,chi)=int2d(Th)(u*chi+dt*du*(dx(u)*dx(chi)+dy(u)*dy(chi)));
+    //varf Aa(u,chi)=int2d(Th)(u*chi);
+    //varf Ab(u,chi)=int2d(Th)(dt*du*(dx(u)*dx(chi)+dy(u)*dy(chi)));
+    varf rhs1(unused,chi)=int2d(Th)(uold*chi+dt*f(uold,vold)*chi);
+    matrix A1=A(Vh,Vh);
+    //matrix A1=Aa(Vh,Vh)+Ab(Vh,Vh);
+    b1[] = rhs1(0,Vh);
+    varf I(v,eta)=int2d(Th)(v*eta+dt*dv*(dx(v)*dx(eta)+dy(v)*dy(eta)));
+    varf rhs2(unused,eta)=int2d(Th)(vold*eta+dt*g(uold,vold)*eta);
+    matrix A2=I(Vh,Vh);
+    b2[] = rhs2(0,Vh);
+     u[]=A1^-1*b1[]; 
+     v[]=A2^-1*b2[];
+     cout <<"i = "<< i <<", t = "<< t << endl;
+    plot(u, dim=2, cmm="u : " + i + " : t=" + t, value=true, fill=1, wait=0);
+   }
