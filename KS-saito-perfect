@@ -9,7 +9,7 @@ int imax = 10000;
 
 //メッシュの定義
 // 行列のサイズを定義
-int N = 64;
+int N = 128;
 int n = (N+1)*(N+1);//n=4225
 int m = (N+1)*(N+1);//m=4225
 mesh Th = square(N, N, [-0.5 + x, -0.5 + y]);
@@ -29,7 +29,7 @@ for (i = 1; i <= imax; i++) {
     // vの∞ノルム
     vn = v[].linfty; 
     //時間刻みの計算
-    dt = min(tau, eps * kh / (4 * vn));
+    //dt = min(tau, eps * kh / (4 * vn));
     t = t + dt;
     //解の更新
     uold = u;
@@ -74,7 +74,7 @@ for (i = 1; i <= imax; i++) {
     }
 
     //領域の上辺, i=4161~4223
-    for(int i = 4161; i < m-1; i++) {
+    for(int i = N*(N+1)+1; i < m-1; i++) {
         BP(i, i-(N+2)) += max(0.0, (vold[][i-(N+2)]-vold[][i])/3);//左下　(8)↙
         BP(i, i-(N+1)) += max(0.0, (3*vold[][i-(N+1)]-2*vold[][i]-vold[][i-(N+2)])/6)+max(0.0, (2*vold[][i-(N+1)]+vold[][i+1]-3*vold[][i])/6);//下　(9)⇃ + (6)⇂
         BP(i, i-1) += max(0.0, (3*vold[][i-1]-2*vold[][i]-vold[][i-(N+2)])/6);//左　(10)↽
@@ -145,7 +145,7 @@ for (i = 1; i <= imax; i++) {
     }
 
     //領域の上辺, i=4161~4223
-    for(int i = 4161; i < m-1; i++) {
+    for(int i = N*(N+1)+1; i < m-1; i++) {
         BM(i, i-(N+2)) += max(0.0, -(vold[][i-(N+2)]-vold[][i])/3);//左下　(8)↙
         BM(i, i-(N+1)) += max(0.0, -(3*vold[][i-(N+1)]-2*vold[][i]-vold[][i-(N+2)])/6)+max(0.0, -(2*vold[][i-(N+1)]+vold[][i+1]-3*vold[][i])/6);//下　(9)⇃ + (6)⇂
         BM(i, i-1) += max(0.0, -(3*vold[][i-1]-2*vold[][i]-vold[][i-(N+2)])/6);//左　(10)↽
@@ -252,4 +252,12 @@ for (i = 1; i <= imax; i++) {
     // 結果を表示
     cout << "i = " << i << ", t = " << t << ", dt = " << dt << endl;
     plot(u, dim=3, cmm="u : " + i + " : t=" + t, value=true, fill=1, wait=0);
+    real mass = int2d(Th)(u);
+    //real mass0 = int2d(Th)(u0);
+    //real mass = (massn - mass0) / mass0;
+    real umin = u[].min;
+    
+    // coutで20桁の精度を設定
+    cout.precision(20);
+    cout << "mass = " << mass << ", min = " << umin << endl;
 }
