@@ -1,0 +1,2 @@
+mesh Th = square(10,10); 
+savemesh(Th, "Th.msh"); 
