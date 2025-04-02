@@ -1,0 +1,374 @@
+
+int Nx=32;
+int Ny=16;
+mesh Th = square(Nx, Nx);
+fespace Vh(Th,P1);
+fespace Uh(Th,P0);
+int Nt=50;
+real dt=1.0e-6;
+real Du=1.0, Dv=1.0, K1=1.0, K2=1.0, K=1.0;
+macro phi(v) v //
+real b = 75.0;
+real r = 0.2;
+real x1 = 0.5 + r*cos(0);
+real y1 = 0.5 + r*sin(0);
+real x2 = 0.5 + r*cos(2*pi/3);
+real y2 = 0.5 + r*sin(2*pi/3);
+real x3 = 0.5 + r*cos(4*pi/3);
+real y3 = 0.5 + r*sin(4*pi/3);
+func u0 = 300*exp(-b*(x - x1)^2 - b*(y - y1)^2)
+        + 300*exp(-b*(x - x2)^2 - b*(y - y2)^2)
+        + 300*exp(-b*(x - x3)^2 - b*(y - y3)^2);
+func v0 = 100 * exp(-1 * ((x-0.5)^2 + (y-0.5)^2));
+Vh uh,vh,ph,qh,uh1,vh1,phih;
+Vh u,v;
+Uh dphihx,dphihy;
+
+varf massM(ph,qh) = int2d(Th,qft=qf1pTlump)(ph*qh);
+varf stiffM(ph,qh) = int2d(Th)(dx(ph)*dx(qh)+dy(ph)*dy(qh));
+
+matrix M = massM(Vh,Vh);
+matrix A = stiffM(Vh,Vh);
+
+real[int] mass(Nt);
+
+// geometric information
+int i,j,j1,j2,k1,k2;
+real[int] MV(2);
+real[int,int] geom(Th.nt,9);
+
+for(int t=0; t<Th.nt; t++){
+    for(int k=0; k<3; k++){
+        k1 = (k+1)%3;
+        k2 = (k+2)%3;
+        MV[0] = (Th[t][k1].x + Th[t][k2].x)/2.0 - Th[t][k].x;
+        MV[1] = (Th[t][k1].y + Th[t][k2].y)/2.0 - Th[t][k].y;
+        geom(t,k) = MV.l2/3.0;
+        geom(t,2*k+3) = -MV[1]/MV.l2;
+        geom(t,2*k+4) =  MV[0]/MV.l2;
+    }
+}
+
+matrix Coeff(Vh.ndof,Vh.ndof);
+matrix Coeff1(Vh.ndof,Vh.ndof);
+real[int] rhs(Vh.ndof),rhs1(Vh.ndof);
+
+uh1 = u0;
+vh1 = v0;
+real gammaij1,gammaij2,nuij1x,nuij1y,nuij2x,nuij2y,temp1,temp2;
+
+
+mesh Th2 = square(Ny, Ny);
+fespace Vh2(Th2,P1);
+fespace Uh2(Th2,P0);
+
+Vh2 uha,vha,pha,qha,uh1a,vh1a,phiha;
+Vh2 ua,va,S;
+Uh2 dphihxa,dphihya;
+
+varf massM2(pha,qha) = int2d(Th2,qft=qf1pTlump)(pha*qha);
+varf stiffM2(pha,qha) = int2d(Th2)(dx(pha)*dx(qha)+dy(pha)*dy(qha));
+
+matrix M2 = massM2(Vh2,Vh2);
+matrix A2 = stiffM2(Vh2,Vh2);
+
+// geometric information
+int ia,ja,j1a,j2a,k1a,k2a;
+real[int] MV2(2);
+real[int,int] geom2(Th2.nt,9);
+
+for(int s=0; s<Th2.nt; s++){
+    for(int ka=0; ka<3; ka++){
+        k1a = (ka+1)%3;
+        k2a = (ka+2)%3;
+        MV2[0] = (Th2[s][k1a].x + Th2[s][k2a].x)/2.0 - Th2[s][ka].x;
+        MV2[1] = (Th2[s][k1a].y + Th2[s][k2a].y)/2.0 - Th2[s][ka].y;
+        geom2(s,ka) = MV2.l2/3.0;
+        geom2(s,2*ka+3) = -MV2[1]/MV2.l2;
+        geom2(s,2*ka+4) =  MV2[0]/MV2.l2;
+    }
+}
+
+matrix Coeff2(Vh2.ndof,Vh2.ndof);
+matrix Coeff12(Vh2.ndof,Vh2.ndof);
+real[int] rhs2(Vh2.ndof),rhs12(Vh2.ndof);
+
+uh1a = u0;
+vh1a = v0;
+real gammaij1a,gammaij2a,nuij1xa,nuij1ya,nuij2xa,nuij2ya,temp1a,temp2a;
+
+for(int j=1; j<=Nt; j++){
+
+    //mass[n] = int2d(Th,qft=qf1pTlump)(uh1);
+    plot(uh1,dim=3,fill=true,value=true,cmm="t = "+(j*dt));
+    plot(uh1a,dim=3,fill=true,value=true,cmm="t = "+(j*dt));
+    // plot(vh1,fill=true,value=true);
+    phih = phi(vh1);
+    dphihx = dx(phih);
+    dphihy = dy(phih);
+    matrix B(Vh.ndof, Vh.ndof);
+    // make coefficient matrix and RHS
+    for(int t=0; t<Th.nt; t++){
+        for(int k=0; k<3; k++){
+            k1 = (k+1)%3;
+            k2 = (k+2)%3;
+            i = Th[t][k];
+            j1 = Th[t][k1];
+            j2 = Th[t][k2];
+            gammaij1 = geom(t,k2);
+            gammaij2 = geom(t,k1);
+            nuij1x =  geom(t,2*k2+3);
+            nuij1y =  geom(t,2*k2+4);
+            nuij2x = -geom(t,2*k1+3);
+            nuij2y = -geom(t,2*k1+4);
+
+            temp1 = nuij1x*dphihx[][t] + nuij1y*dphihy[][t];
+            temp2 = nuij2x*dphihx[][t] + nuij2y*dphihy[][t];
+            if(temp1>0){
+                B(i,i) += gammaij1 * temp1;
+            }else{
+                B(i,j1) += gammaij1 * temp1;
+            }
+            if(temp2>0){
+                B(i,i) += gammaij2 * temp2;
+            }else{
+                B(i,j2) += gammaij2 * temp2;
+            }
+        }
+    }
+    Coeff =M + dt*Du*A + dt*B;
+    set(Coeff, solver=sparsesolver);
+    rhs = M*uh1[];
+    uh[] = Coeff^-1*rhs;
+    //FCT
+    matrix C(Vh.ndof, Vh.ndof);
+    matrix F(Vh.ndof, Vh.ndof);
+    matrix a(Vh.ndof, Vh.ndof);
+    matrix fa(Vh.ndof, Vh.ndof);
+    varf convM(ph,qh) = int2d(Th)(-ph*(dx(vh1)*dx(qh)+dy(vh1)*dy(qh)));
+    matrix K = convM(Vh,Vh);
+
+    real[int] Pp(Vh.ndof),Pn(Vh.ndof),Qp(Vh.ndof),Qn(Vh.ndof),Rp(Vh.ndof),Rn(Vh.ndof),Fa(Vh.ndof);
+    C=B-K;
+
+    for (int i = 0; i < Vh.ndof; i++) {
+        for (int j = 0; j < Vh.ndof; j++) {
+            if (i == j) continue; 
+            real diffe = uh[][j] - uh[][i];
+            real temp = - C(i, j) * diffe;
+            F(i, j) = (temp * diffe < 0) ? temp : 0;
+        }
+    }
+
+
+    for (int i = 0; i < Vh.ndof; i++) {
+        Pp[i] = 0;
+        Pn[i] = 0;
+        for (int j = 0; j < Vh.ndof; j++) {
+            if(i == j) continue;
+            Pp[i] += max(0.0, F(i, j));
+            Pn[i] += min(0.0, F(i, j));
+        }
+    }
+
+    for (int i = 0; i < Vh.ndof; i++) {
+        Qp[i] = -1e30; 
+        Qn[i] = 1e30;  
+    }
+    for (int t = 0; t < Th.nt; t++) {
+        for (int k = 0; k < 3; k++) {
+            int i = Th[t][k];
+            for (int m = 0; m < 3; m++) {
+                if(m == k) continue;
+                int j = Th[t][m];
+                real diffe = uh[][j] - uh[][i];
+                if(diffe > Qp[i]) Qp[i] = diffe;
+                if(diffe < Qn[i]) Qn[i] = diffe;
+            }
+        }
+    }
+
+    for (int i = 0; i < Vh.ndof; i++) {
+        Rp[i] = (Pp[i] != 0) ? min(1.0, M(i, i) * Qp[i] / (dt * Pp[i])) : 1.0;
+        Rn[i] = (Pn[i] != 0) ? min(1.0, M(i, i) * Qn[i] / (dt * Pn[i])) : 1.0;
+    }
+
+    for (int i = 0; i < Vh.ndof; i++) {
+        for (int j = 0; j < Vh.ndof; j++) {
+            if(i == j) continue;
+            if (F(i, j) > 0) {
+                a(i, j) = min(Rp[i], Rn[j]);
+            } else {
+                a(i, j) = min(Rp[j], Rn[i]);
+            }
+        }
+    }
+
+    for (int i = 0; i < Vh.ndof; i++) {
+        for (int j = 0; j < Vh.ndof; j++) {
+            fa(i, j) = a(i, j) * F(i, j);
+        }
+    }
+
+    for (int i = 0; i < Vh.ndof; i++) {
+        Fa[i] = 0;
+        for (int j = 0; j < Vh.ndof; j++) {
+            if(i == j) continue;
+            Fa[i] += fa(i, j);
+        }
+    }
+
+    Coeff = M + dt*Du*A + dt*B;
+    set(Coeff, solver=sparsesolver);
+    rhs = M*uh1[];
+    rhs += Fa;
+    uh[] = Coeff^-1*rhs;
+
+    Coeff = (1.0 + dt)*M + dt*Dv*A;
+    set(Coeff, solver=sparsesolver);
+    rhs1 = vh1[] + dt*uh[];
+    rhs = M*rhs1;
+    vh[] = Coeff^-1*rhs;
+
+    uh1 = uh;
+    vh1 = vh;
+
+    phiha = phi(vh1a);
+    dphihxa = dx(phiha);
+    dphihya = dy(phiha);
+    matrix B2(Vh2.ndof, Vh2.ndof);
+    // make coefficient matrix and RHS
+    for(int s=0; s<Th2.nt; s++){
+        for(int ka=0; ka<3; ka++){
+            k1a = (ka+1)%3;
+            k2a = (ka+2)%3;
+            ia = Th2[s][ka];
+            j1a = Th2[s][k1a];
+            j2a = Th2[s][k2a];
+            gammaij1a = geom2(s,k2a);
+            gammaij2a = geom2(s,k1a);
+            nuij1xa =  geom2(s,2*k2a+3);
+            nuij1ya =  geom2(s,2*k2a+4);
+            nuij2xa = -geom2(s,2*k1a+3);
+            nuij2ya = -geom2(s,2*k1a+4);
+
+            temp1a = nuij1xa*dphihxa[][s] + nuij1ya*dphihya[][s];
+            temp2a = nuij2xa*dphihxa[][s] + nuij2ya*dphihya[][s];
+            if(temp1a>0){
+                B2(ia,ia) += gammaij1a * temp1a;
+            }else{
+                B2(ia,j1a) += gammaij1a * temp1a;
+            }
+            if(temp2a>0){
+                B2(ia,ia) += gammaij2a * temp2a;
+            }else{
+                B2(ia,j2a) += gammaij2a * temp2a;
+            }
+        }
+    }
+    Coeff2 = M2+ dt*Du*A2 + dt*B2;
+    set(Coeff2, solver=sparsesolver);
+    rhs2 = M2*uh1a[];
+    uha[] = Coeff2^-1*rhs2;
+    
+    matrix C2(Vh2.ndof, Vh2.ndof);
+    matrix F2(Vh2.ndof, Vh2.ndof);
+    matrix a2(Vh2.ndof, Vh2.ndof);
+    matrix fa2(Vh2.ndof, Vh2.ndof);
+    varf convM2(pha,qha) = int2d(Th2)(-pha*(dx(vh1a)*dx(qha)+dy(vh1a)*dy(qha)));
+    matrix K2 = convM2(Vh2,Vh2);
+
+    real[int] Pp2(Vh2.ndof),Pn2(Vh2.ndof),Qp2(Vh2.ndof),Qn2(Vh2.ndof),Rp2(Vh2.ndof),Rn2(Vh2.ndof),Fa2(Vh2.ndof);
+    C2=B2-K2;
+
+    for (int ia = 0; ia < Vh2.ndof; ia++) {
+        for (int ja = 0; ja < Vh2.ndof; ja++) {
+            if (ia == ja) continue; 
+            real diffe2 = uha[][ja] - uha[][ia];
+            real temp2 = - C(ia, ja) * diffe2;
+            F(ia, ja) = (temp2 * diffe2 < 0) ? temp2 : 0;
+        }
+    }
+
+
+    for (int ia = 0; ia < Vh2.ndof; ia++) {
+        Pp2[ia] = 0;
+        Pn2[ia] = 0;
+        for (int ja = 0; ja < Vh2.ndof; ja++) {
+            if(ia == ja) continue;
+            Pp2[ia] += max(0.0, F2(ia, ja));
+            Pn2[ia] += min(0.0, F2(ia, ja));
+        }
+    }
+
+    for (int ia = 0; ia < Vh2.ndof; ia++) {
+        Qp2[ia] = -1e30; 
+        Qn2[ia] = 1e30;  
+    }
+    for (int s = 0; s < Th2.nt; s++) {
+        for (int ka = 0; ka < 3; ka++) {
+            int ia = Th2[s][ka];
+            for (int ma = 0; ma < 3; ma++) {
+                if(ma == ka) continue;
+                int ja = Th2[s][ma];
+                real diffe2 = uha[][ja] - uha[][ia];
+                if(diffe2 > Qp2[ia]) Qp2[ia] = diffe2;
+                if(diffe2 < Qn2[ia]) Qn2[ia] = diffe2;
+            }
+        }
+    }
+
+    for (int ia = 0; ia < Vh2.ndof; ia++) {
+        Rp2[ia] = (Pp2[ia] != 0) ? min(1.0, M2(ia, ia) * Qp2[ia] / (dt * Pp2[ia])) : 1.0;
+        Rn2[ia] = (Pn2[ia] != 0) ? min(1.0, M2(ia, ia) * Qn2[ia] / (dt * Pn2[ia])) : 1.0;
+    }
+
+    for (int ia = 0; ia < Vh2.ndof; ia++) {
+        for (int ja = 0; ja < Vh2.ndof; ja++) {
+            if(ia == ja) continue;
+            if (F(ia, ja) > 0) {
+                a2(ia, ja) = min(Rp2[ia], Rn2[ja]);
+            } else {
+                a2(ia, ja) = min(Rp2[ja], Rn2[ia]);
+            }
+        }
+    }
+
+    for (int ia = 0; ia < Vh2.ndof; ia++) {
+        for (int ja = 0; ja < Vh2.ndof; ja++) {
+            fa2(ia, ja) = a2(ia, ja) * F2(ia, ja);
+        }
+    }
+
+    for (int ia = 0; ia < Vh2.ndof; ia++) {
+        Fa2[ia] = 0;
+        for (int ja = 0; ja < Vh2.ndof; ja++) {
+            if(ia == ja) continue;
+            Fa2[ia] += fa2(ia, ja);
+        }
+    }
+    Coeff2 = M2 + dt*Du*A2 + dt*B2;
+    set(Coeff2, solver=sparsesolver);
+    rhs2 = M2*uh1a[];
+    rhs2 += Fa2;
+    uha[] = Coeff2^-1*rhs2;
+
+    Coeff2 = (1.0 + dt)*M2 + dt*Dv*A2;
+    set(Coeff2, solver=sparsesolver);
+    rhs12 = vh1a[] + dt*uha[];
+    rhs2 = M2*rhs12;
+    vha[] = Coeff2^-1*rhs2;
+
+    uh1a = uha;
+    vh1a = vha;
+
+    real mass = int2d(Th)(uh1);
+    real umax = uh1[].max;
+    real umin = uh1[].min;
+    S=uh1;
+    real err = sqrt(int2d(Th2)((S-uh1a)^2));
+    // coutで20桁の精度を設定
+    cout.precision(20);
+    cout << "mass = " << mass << ", max = " << umax << ", min = " << umin << ", L2Erroru = " << err << endl;
+
+}
