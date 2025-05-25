@@ -1,0 +1,744 @@
+
+int Nx=500;
+//mesh Th = square(Nx, Nx, [2*pi*x, 2*pi*y]);
+border circle(t=0, 2*pi) {
+    x = pi + pi*cos(t); 
+    y = pi + pi*sin(t);
+}
+mesh Th = buildmesh(circle(Nx));
+fespace Vh(Th,P1);
+fespace Uh(Th,P0);
+int Nt=10000;
+real dt=1.0e-6;
+real Du=1.0, Dv=1.0, K1=1.0, K2=1.0, K=1.0;
+macro phi(v) v //
+func u0 = 10*exp(-10*((x - pi)^2+(y - pi)^2));
+func v0 = 10*exp(-((x-pi)^2 + (y-pi)^2)/2);
+Vh uh,vh,ph,qh,uh1,vh1,phih;
+Vh uk1,uk2,vk1,vk2,duk,dvk;
+Vh ubasic,ue1,ue2,ue3,ue4,ue5,ue6,ue7,ue8,ue9;
+Vh u,v;
+Uh dphihx,dphihy;
+
+varf massM(ph,qh) = int2d(Th,qft=qf1pTlump)(ph*qh);
+varf stiffM(ph,qh) = int2d(Th)(dx(ph)*dx(qh)+dy(ph)*dy(qh));
+
+matrix M = massM(Vh,Vh);
+matrix A = stiffM(Vh,Vh);
+
+real[int] mass(Nt);
+
+// geometric information
+int i,j,j1,j2,k1,k2;
+real[int] MV(2);
+real[int,int] geom(Th.nt,9);
+
+for(int t=0; t<Th.nt; t++){
+    for(int k=0; k<3; k++){
+        k1 = (k+1)%3;
+        k2 = (k+2)%3;
+        MV[0] = (Th[t][k1].x + Th[t][k2].x)/2.0 - Th[t][k].x;
+        MV[1] = (Th[t][k1].y + Th[t][k2].y)/2.0 - Th[t][k].y;
+        geom(t,k) = MV.l2/3.0;
+        geom(t,2*k+3) = -MV[1]/MV.l2;
+        geom(t,2*k+4) =  MV[0]/MV.l2;
+    }
+}
+
+matrix Coeff(Vh.ndof,Vh.ndof);
+matrix Coeff1(Vh.ndof,Vh.ndof);
+real[int] rhs(Vh.ndof),rhs1(Vh.ndof),rhs2(Vh.ndof);
+
+uh1 = u0;
+vh1 = v0;
+uk1=u0;
+vk1=v0;
+real gammaij1,gammaij2,nuij1x,nuij1y,nuij2x,nuij2y,temp1,temp2;
+real sabunMax, vsabunMax, usabunMax;
+real[int] vsabun(Th.nv);  
+real[int] usabun(Th.nv); 
+real CN=0.5;
+for(int j=1; j<=Nt; j++){
+
+    //mass[n] = int2d(Th,qft=qf1pTlump)(uh1);
+    plot(uh1,dim=3,fill=true,value=true,cmm="t = "+(j*dt));
+    // plot(vh1,fill=true,value=true);
+    sabunMax = 1;
+    while(sabunMax>1e-15){
+    Coeff = (1.0 + dt*K1/K*CN)*M + dt/K*Dv*CN*A;
+    set(Coeff, solver=sparsesolver);
+    rhs1 = dt*K2/K*uk1[]+ dt*K2/K*uh1[];
+    rhs1 +=vh1[];
+    rhs = M*rhs1;
+    rhs2 = dt*CN*vh1[];
+    real[int] tmp1 = M * rhs2;
+    rhs -= tmp1;
+    real[int] tmp2 = A * rhs2;
+    rhs -= tmp2;
+    vk2[] = Coeff^-1*rhs;
+
+    phih = phi((vk2+vh1)/2);
+    dphihx = dx(phih);
+    dphihy = dy(phih);
+    matrix B(Vh.ndof, Vh.ndof);
+    // make coefficient matrix and RHS
+    for(int t=0; t<Th.nt; t++){
+        for(int k=0; k<3; k++){
+            k1 = (k+1)%3;
+            k2 = (k+2)%3;
+            i = Th[t][k];
+            j1 = Th[t][k1];
+            j2 = Th[t][k2];
+            gammaij1 = geom(t,k2);
+            gammaij2 = geom(t,k1);
+            nuij1x =  geom(t,2*k2+3);
+            nuij1y =  geom(t,2*k2+4);
+            nuij2x = -geom(t,2*k1+3);
+            nuij2y = -geom(t,2*k1+4);
+
+            temp1 = nuij1x*dphihx[][t] + nuij1y*dphihy[][t];
+            temp2 = nuij2x*dphihx[][t] + nuij2y*dphihy[][t];
+            if(temp1>0){
+                B(i,i) += gammaij1 * temp1;
+            }else{
+                B(i,j1) += gammaij1 * temp1;
+            }
+            if(temp2>0){
+                B(i,i) += gammaij2 * temp2;
+            }else{
+                B(i,j2) += gammaij2 * temp2;
+            }
+        }
+    }
+
+    Coeff = M + dt*Du*CN*A + dt*CN*B;
+    set(Coeff, solver=sparsesolver);
+    rhs = M*uh1[];
+    rhs2 = dt*CN*uh1[];
+    real[int] tmp3 = B * rhs2;
+    rhs -= tmp3;
+    real[int] tmp4 = A * rhs2;
+    rhs -= tmp4;
+    uk2[] = Coeff^-1*rhs;
+    duk=uk1-uk2;
+    //dvk=vk1-vk2;
+    //vsabun=dvk[].linfty/vk1[].linfty;
+    usabun=duk[].linfty/uk1[].linfty;
+    //vsabunMax = vsabun.linfty;
+    usabunMax = usabun.linfty;
+    //sabunMax = max(vsabunMax, usabunMax);
+    sabunMax = usabunMax;
+
+    //vk1=vk2;
+    uk1=uk2;
+    }
+    uh1 = uk1;
+    vh1 = vk2;
+
+    real mass = int2d(Th)(uh1);
+    real umax = uh1[].max;
+    real umin = uh1[].min;
+    real E = int2d(Th)(uh1*log(uh1)+(dx(vh1)^2+dy(vh1)^2)/2+vh1^2/2);
+    // coutで20桁の精度を設定
+    cout.precision(20);
+    cout << "mass = " << mass << ", max = " << umax << ", min = " << umin  << ", E = " << E << endl;
+ubasic=uh1;
+}
+
+Nt=4000;
+dt=2.5e-6;
+uh1 = u0;
+vh1 = v0;
+uk1=u0;
+vk1=v0;
+
+for(int j=1; j<=Nt; j++){
+
+    //mass[n] = int2d(Th,qft=qf1pTlump)(uh1);
+    plot(uh1,dim=3,fill=true,value=true,cmm="t = "+(j*dt));
+    // plot(vh1,fill=true,value=true);
+    phih = phi(vh1);
+    dphihx = dx(phih);
+    dphihy = dy(phih);
+    matrix B(Vh.ndof, Vh.ndof);
+    // make coefficient matrix and RHS
+    for(int t=0; t<Th.nt; t++){
+        for(int k=0; k<3; k++){
+            k1 = (k+1)%3;
+            k2 = (k+2)%3;
+            i = Th[t][k];
+            j1 = Th[t][k1];
+            j2 = Th[t][k2];
+            gammaij1 = geom(t,k2);
+            gammaij2 = geom(t,k1);
+            nuij1x =  geom(t,2*k2+3);
+            nuij1y =  geom(t,2*k2+4);
+            nuij2x = -geom(t,2*k1+3);
+            nuij2y = -geom(t,2*k1+4);
+
+            temp1 = nuij1x*dphihx[][t] + nuij1y*dphihy[][t];
+            temp2 = nuij2x*dphihx[][t] + nuij2y*dphihy[][t];
+            if(temp1>0){
+                B(i,i) += gammaij1 * temp1;
+            }else{
+                B(i,j1) += gammaij1 * temp1;
+            }
+            if(temp2>0){
+                B(i,i) += gammaij2 * temp2;
+            }else{
+                B(i,j2) += gammaij2 * temp2;
+            }
+        }
+    }
+    Coeff = M + dt*Du*A + dt*B;
+    set(Coeff, solver=sparsesolver);
+    rhs = M*uh1[];
+    uh[] = Coeff^-1*rhs;
+    Coeff = (1.0 + dt*K1/K)*M + dt/K*Dv*A;
+    set(Coeff, solver=sparsesolver);
+    rhs1 = vh1[] + dt*K2/K*uh[];
+    rhs = M*rhs1;
+    vh[] = Coeff^-1*rhs;
+
+    uh1 = uh;
+    vh1 = vh;
+    real mass = int2d(Th)(uh1);
+    real umax = uh1[].max;
+    real umin = uh1[].min;
+    cout.precision(20);
+    cout << "mass = " << mass << ", max = " << umax << ", min = " << umin  << endl;
+    ue1=uh1;
+}
+
+Nt=2000;
+dt=5.0e-6;
+uh1 = u0;
+vh1 = v0;
+uk1=u0;
+vk1=v0;
+
+for(int j=1; j<=Nt; j++){
+
+    //mass[n] = int2d(Th,qft=qf1pTlump)(uh1);
+    plot(uh1,dim=3,fill=true,value=true,cmm="t = "+(j*dt));
+    // plot(vh1,fill=true,value=true);
+    phih = phi(vh1);
+    dphihx = dx(phih);
+    dphihy = dy(phih);
+    matrix B(Vh.ndof, Vh.ndof);
+    // make coefficient matrix and RHS
+    for(int t=0; t<Th.nt; t++){
+        for(int k=0; k<3; k++){
+            k1 = (k+1)%3;
+            k2 = (k+2)%3;
+            i = Th[t][k];
+            j1 = Th[t][k1];
+            j2 = Th[t][k2];
+            gammaij1 = geom(t,k2);
+            gammaij2 = geom(t,k1);
+            nuij1x =  geom(t,2*k2+3);
+            nuij1y =  geom(t,2*k2+4);
+            nuij2x = -geom(t,2*k1+3);
+            nuij2y = -geom(t,2*k1+4);
+
+            temp1 = nuij1x*dphihx[][t] + nuij1y*dphihy[][t];
+            temp2 = nuij2x*dphihx[][t] + nuij2y*dphihy[][t];
+            if(temp1>0){
+                B(i,i) += gammaij1 * temp1;
+            }else{
+                B(i,j1) += gammaij1 * temp1;
+            }
+            if(temp2>0){
+                B(i,i) += gammaij2 * temp2;
+            }else{
+                B(i,j2) += gammaij2 * temp2;
+            }
+        }
+    }
+    Coeff = M + dt*Du*A + dt*B;
+    set(Coeff, solver=sparsesolver);
+    rhs = M*uh1[];
+    uh[] = Coeff^-1*rhs;
+    Coeff = (1.0 + dt*K1/K)*M + dt/K*Dv*A;
+    set(Coeff, solver=sparsesolver);
+    rhs1 = vh1[] + dt*K2/K*uh[];
+    rhs = M*rhs1;
+    vh[] = Coeff^-1*rhs;
+
+    uh1 = uh;
+    vh1 = vh;
+    real mass = int2d(Th)(uh1);
+    real umax = uh1[].max;
+    real umin = uh1[].min;
+    cout.precision(20);
+    cout << "mass = " << mass << ", max = " << umax << ", min = " << umin  << endl;
+    ue2=uh1;
+}
+
+Nt=1000;
+dt=1.0e-5;
+uh1 = u0;
+vh1 = v0;
+uk1=u0;
+vk1=v0;
+
+for(int j=1; j<=Nt; j++){
+
+    //mass[n] = int2d(Th,qft=qf1pTlump)(uh1);
+    plot(uh1,dim=3,fill=true,value=true,cmm="t = "+(j*dt));
+    // plot(vh1,fill=true,value=true);
+    phih = phi(vh1);
+    dphihx = dx(phih);
+    dphihy = dy(phih);
+    matrix B(Vh.ndof, Vh.ndof);
+    // make coefficient matrix and RHS
+    for(int t=0; t<Th.nt; t++){
+        for(int k=0; k<3; k++){
+            k1 = (k+1)%3;
+            k2 = (k+2)%3;
+            i = Th[t][k];
+            j1 = Th[t][k1];
+            j2 = Th[t][k2];
+            gammaij1 = geom(t,k2);
+            gammaij2 = geom(t,k1);
+            nuij1x =  geom(t,2*k2+3);
+            nuij1y =  geom(t,2*k2+4);
+            nuij2x = -geom(t,2*k1+3);
+            nuij2y = -geom(t,2*k1+4);
+
+            temp1 = nuij1x*dphihx[][t] + nuij1y*dphihy[][t];
+            temp2 = nuij2x*dphihx[][t] + nuij2y*dphihy[][t];
+            if(temp1>0){
+                B(i,i) += gammaij1 * temp1;
+            }else{
+                B(i,j1) += gammaij1 * temp1;
+            }
+            if(temp2>0){
+                B(i,i) += gammaij2 * temp2;
+            }else{
+                B(i,j2) += gammaij2 * temp2;
+            }
+        }
+    }
+    Coeff = M + dt*Du*A + dt*B;
+    set(Coeff, solver=sparsesolver);
+    rhs = M*uh1[];
+    uh[] = Coeff^-1*rhs;
+    Coeff = (1.0 + dt*K1/K)*M + dt/K*Dv*A;
+    set(Coeff, solver=sparsesolver);
+    rhs1 = vh1[] + dt*K2/K*uh[];
+    rhs = M*rhs1;
+    vh[] = Coeff^-1*rhs;
+
+    uh1 = uh;
+    vh1 = vh;
+    real mass = int2d(Th)(uh1);
+    real umax = uh1[].max;
+    real umin = uh1[].min;
+    cout.precision(20);
+    cout << "mass = " << mass << ", max = " << umax << ", min = " << umin  << endl;
+    ue3=uh1;
+}
+
+Nt=400;
+dt=2.5e-5;
+uh1 = u0;
+vh1 = v0;
+uk1=u0;
+vk1=v0;
+
+for(int j=1; j<=Nt; j++){
+
+    //mass[n] = int2d(Th,qft=qf1pTlump)(uh1);
+    plot(uh1,dim=3,fill=true,value=true,cmm="t = "+(j*dt));
+    // plot(vh1,fill=true,value=true);
+    phih = phi(vh1);
+    dphihx = dx(phih);
+    dphihy = dy(phih);
+    matrix B(Vh.ndof, Vh.ndof);
+    // make coefficient matrix and RHS
+    for(int t=0; t<Th.nt; t++){
+        for(int k=0; k<3; k++){
+            k1 = (k+1)%3;
+            k2 = (k+2)%3;
+            i = Th[t][k];
+            j1 = Th[t][k1];
+            j2 = Th[t][k2];
+            gammaij1 = geom(t,k2);
+            gammaij2 = geom(t,k1);
+            nuij1x =  geom(t,2*k2+3);
+            nuij1y =  geom(t,2*k2+4);
+            nuij2x = -geom(t,2*k1+3);
+            nuij2y = -geom(t,2*k1+4);
+
+            temp1 = nuij1x*dphihx[][t] + nuij1y*dphihy[][t];
+            temp2 = nuij2x*dphihx[][t] + nuij2y*dphihy[][t];
+            if(temp1>0){
+                B(i,i) += gammaij1 * temp1;
+            }else{
+                B(i,j1) += gammaij1 * temp1;
+            }
+            if(temp2>0){
+                B(i,i) += gammaij2 * temp2;
+            }else{
+                B(i,j2) += gammaij2 * temp2;
+            }
+        }
+    }
+    Coeff = M + dt*Du*A + dt*B;
+    set(Coeff, solver=sparsesolver);
+    rhs = M*uh1[];
+    uh[] = Coeff^-1*rhs;
+    Coeff = (1.0 + dt*K1/K)*M + dt/K*Dv*A;
+    set(Coeff, solver=sparsesolver);
+    rhs1 = vh1[] + dt*K2/K*uh[];
+    rhs = M*rhs1;
+    vh[] = Coeff^-1*rhs;
+
+    uh1 = uh;
+    vh1 = vh;
+    real mass = int2d(Th)(uh1);
+    real umax = uh1[].max;
+    real umin = uh1[].min;
+    cout.precision(20);
+    cout << "mass = " << mass << ", max = " << umax << ", min = " << umin  << endl;
+    ue4=uh1;
+}
+
+Nt=200;
+dt=5.0e-5;
+uh1 = u0;
+vh1 = v0;
+uk1=u0;
+vk1=v0;
+
+for(int j=1; j<=Nt; j++){
+
+    //mass[n] = int2d(Th,qft=qf1pTlump)(uh1);
+    plot(uh1,dim=3,fill=true,value=true,cmm="t = "+(j*dt));
+    // plot(vh1,fill=true,value=true);
+    phih = phi(vh1);
+    dphihx = dx(phih);
+    dphihy = dy(phih);
+    matrix B(Vh.ndof, Vh.ndof);
+    // make coefficient matrix and RHS
+    for(int t=0; t<Th.nt; t++){
+        for(int k=0; k<3; k++){
+            k1 = (k+1)%3;
+            k2 = (k+2)%3;
+            i = Th[t][k];
+            j1 = Th[t][k1];
+            j2 = Th[t][k2];
+            gammaij1 = geom(t,k2);
+            gammaij2 = geom(t,k1);
+            nuij1x =  geom(t,2*k2+3);
+            nuij1y =  geom(t,2*k2+4);
+            nuij2x = -geom(t,2*k1+3);
+            nuij2y = -geom(t,2*k1+4);
+
+            temp1 = nuij1x*dphihx[][t] + nuij1y*dphihy[][t];
+            temp2 = nuij2x*dphihx[][t] + nuij2y*dphihy[][t];
+            if(temp1>0){
+                B(i,i) += gammaij1 * temp1;
+            }else{
+                B(i,j1) += gammaij1 * temp1;
+            }
+            if(temp2>0){
+                B(i,i) += gammaij2 * temp2;
+            }else{
+                B(i,j2) += gammaij2 * temp2;
+            }
+        }
+    }
+    Coeff = M + dt*Du*A + dt*B;
+    set(Coeff, solver=sparsesolver);
+    rhs = M*uh1[];
+    uh[] = Coeff^-1*rhs;
+    Coeff = (1.0 + dt*K1/K)*M + dt/K*Dv*A;
+    set(Coeff, solver=sparsesolver);
+    rhs1 = vh1[] + dt*K2/K*uh[];
+    rhs = M*rhs1;
+    vh[] = Coeff^-1*rhs;
+
+    uh1 = uh;
+    vh1 = vh;
+    real mass = int2d(Th)(uh1);
+    real umax = uh1[].max;
+    real umin = uh1[].min;
+    cout.precision(20);
+    cout << "mass = " << mass << ", max = " << umax << ", min = " << umin  << endl;
+    ue5=uh1;
+}
+
+Nt=100;
+dt=1.0e-4;
+uh1 = u0;
+vh1 = v0;
+uk1=u0;
+vk1=v0;
+
+for(int j=1; j<=Nt; j++){
+
+    //mass[n] = int2d(Th,qft=qf1pTlump)(uh1);
+    plot(uh1,dim=3,fill=true,value=true,cmm="t = "+(j*dt));
+    // plot(vh1,fill=true,value=true);
+    phih = phi(vh1);
+    dphihx = dx(phih);
+    dphihy = dy(phih);
+    matrix B(Vh.ndof, Vh.ndof);
+    // make coefficient matrix and RHS
+    for(int t=0; t<Th.nt; t++){
+        for(int k=0; k<3; k++){
+            k1 = (k+1)%3;
+            k2 = (k+2)%3;
+            i = Th[t][k];
+            j1 = Th[t][k1];
+            j2 = Th[t][k2];
+            gammaij1 = geom(t,k2);
+            gammaij2 = geom(t,k1);
+            nuij1x =  geom(t,2*k2+3);
+            nuij1y =  geom(t,2*k2+4);
+            nuij2x = -geom(t,2*k1+3);
+            nuij2y = -geom(t,2*k1+4);
+
+            temp1 = nuij1x*dphihx[][t] + nuij1y*dphihy[][t];
+            temp2 = nuij2x*dphihx[][t] + nuij2y*dphihy[][t];
+            if(temp1>0){
+                B(i,i) += gammaij1 * temp1;
+            }else{
+                B(i,j1) += gammaij1 * temp1;
+            }
+            if(temp2>0){
+                B(i,i) += gammaij2 * temp2;
+            }else{
+                B(i,j2) += gammaij2 * temp2;
+            }
+        }
+    }
+    Coeff = M + dt*Du*A + dt*B;
+    set(Coeff, solver=sparsesolver);
+    rhs = M*uh1[];
+    uh[] = Coeff^-1*rhs;
+    Coeff = (1.0 + dt*K1/K)*M + dt/K*Dv*A;
+    set(Coeff, solver=sparsesolver);
+    rhs1 = vh1[] + dt*K2/K*uh[];
+    rhs = M*rhs1;
+    vh[] = Coeff^-1*rhs;
+
+    uh1 = uh;
+    vh1 = vh;
+    real mass = int2d(Th)(uh1);
+    real umax = uh1[].max;
+    real umin = uh1[].min;
+    cout.precision(20);
+    cout << "mass = " << mass << ", max = " << umax << ", min = " << umin  << endl;
+    ue6=uh1;
+}
+
+Nt=40;
+dt=2.5e-4;
+uh1 = u0;
+vh1 = v0;
+uk1=u0;
+vk1=v0;
+
+for(int j=1; j<=Nt; j++){
+
+    //mass[n] = int2d(Th,qft=qf1pTlump)(uh1);
+    plot(uh1,dim=3,fill=true,value=true,cmm="t = "+(j*dt));
+    // plot(vh1,fill=true,value=true);
+    phih = phi(vh1);
+    dphihx = dx(phih);
+    dphihy = dy(phih);
+    matrix B(Vh.ndof, Vh.ndof);
+    // make coefficient matrix and RHS
+    for(int t=0; t<Th.nt; t++){
+        for(int k=0; k<3; k++){
+            k1 = (k+1)%3;
+            k2 = (k+2)%3;
+            i = Th[t][k];
+            j1 = Th[t][k1];
+            j2 = Th[t][k2];
+            gammaij1 = geom(t,k2);
+            gammaij2 = geom(t,k1);
+            nuij1x =  geom(t,2*k2+3);
+            nuij1y =  geom(t,2*k2+4);
+            nuij2x = -geom(t,2*k1+3);
+            nuij2y = -geom(t,2*k1+4);
+
+            temp1 = nuij1x*dphihx[][t] + nuij1y*dphihy[][t];
+            temp2 = nuij2x*dphihx[][t] + nuij2y*dphihy[][t];
+            if(temp1>0){
+                B(i,i) += gammaij1 * temp1;
+            }else{
+                B(i,j1) += gammaij1 * temp1;
+            }
+            if(temp2>0){
+                B(i,i) += gammaij2 * temp2;
+            }else{
+                B(i,j2) += gammaij2 * temp2;
+            }
+        }
+    }
+    Coeff = M + dt*Du*A + dt*B;
+    set(Coeff, solver=sparsesolver);
+    rhs = M*uh1[];
+    uh[] = Coeff^-1*rhs;
+    Coeff = (1.0 + dt*K1/K)*M + dt/K*Dv*A;
+    set(Coeff, solver=sparsesolver);
+    rhs1 = vh1[] + dt*K2/K*uh[];
+    rhs = M*rhs1;
+    vh[] = Coeff^-1*rhs;
+
+    uh1 = uh;
+    vh1 = vh;
+    real mass = int2d(Th)(uh1);
+    real umax = uh1[].max;
+    real umin = uh1[].min;
+    cout.precision(20);
+    cout << "mass = " << mass << ", max = " << umax << ", min = " << umin  << endl;
+    ue7=uh1;
+}
+
+Nt=20;
+dt=5.0e-4;
+uh1 = u0;
+vh1 = v0;
+uk1=u0;
+vk1=v0;
+
+for(int j=1; j<=Nt; j++){
+
+    //mass[n] = int2d(Th,qft=qf1pTlump)(uh1);
+    plot(uh1,dim=3,fill=true,value=true,cmm="t = "+(j*dt));
+    // plot(vh1,fill=true,value=true);
+    phih = phi(vh1);
+    dphihx = dx(phih);
+    dphihy = dy(phih);
+    matrix B(Vh.ndof, Vh.ndof);
+    // make coefficient matrix and RHS
+    for(int t=0; t<Th.nt; t++){
+        for(int k=0; k<3; k++){
+            k1 = (k+1)%3;
+            k2 = (k+2)%3;
+            i = Th[t][k];
+            j1 = Th[t][k1];
+            j2 = Th[t][k2];
+            gammaij1 = geom(t,k2);
+            gammaij2 = geom(t,k1);
+            nuij1x =  geom(t,2*k2+3);
+            nuij1y =  geom(t,2*k2+4);
+            nuij2x = -geom(t,2*k1+3);
+            nuij2y = -geom(t,2*k1+4);
+
+            temp1 = nuij1x*dphihx[][t] + nuij1y*dphihy[][t];
+            temp2 = nuij2x*dphihx[][t] + nuij2y*dphihy[][t];
+            if(temp1>0){
+                B(i,i) += gammaij1 * temp1;
+            }else{
+                B(i,j1) += gammaij1 * temp1;
+            }
+            if(temp2>0){
+                B(i,i) += gammaij2 * temp2;
+            }else{
+                B(i,j2) += gammaij2 * temp2;
+            }
+        }
+    }
+    Coeff = M + dt*Du*A + dt*B;
+    set(Coeff, solver=sparsesolver);
+    rhs = M*uh1[];
+    uh[] = Coeff^-1*rhs;
+    Coeff = (1.0 + dt*K1/K)*M + dt/K*Dv*A;
+    set(Coeff, solver=sparsesolver);
+    rhs1 = vh1[] + dt*K2/K*uh[];
+    rhs = M*rhs1;
+    vh[] = Coeff^-1*rhs;
+
+    uh1 = uh;
+    vh1 = vh;
+    real mass = int2d(Th)(uh1);
+    real umax = uh1[].max;
+    real umin = uh1[].min;
+    cout.precision(20);
+    cout << "mass = " << mass << ", max = " << umax << ", min = " << umin  << endl;
+    ue8=uh1;
+}
+
+Nt=10;
+dt=1.0e-3;
+uh1 = u0;
+vh1 = v0;
+uk1=u0;
+vk1=v0;
+
+for(int j=1; j<=Nt; j++){
+
+    //mass[n] = int2d(Th,qft=qf1pTlump)(uh1);
+    plot(uh1,dim=3,fill=true,value=true,cmm="t = "+(j*dt));
+    // plot(vh1,fill=true,value=true);
+    phih = phi(vh1);
+    dphihx = dx(phih);
+    dphihy = dy(phih);
+    matrix B(Vh.ndof, Vh.ndof);
+    // make coefficient matrix and RHS
+    for(int t=0; t<Th.nt; t++){
+        for(int k=0; k<3; k++){
+            k1 = (k+1)%3;
+            k2 = (k+2)%3;
+            i = Th[t][k];
+            j1 = Th[t][k1];
+            j2 = Th[t][k2];
+            gammaij1 = geom(t,k2);
+            gammaij2 = geom(t,k1);
+            nuij1x =  geom(t,2*k2+3);
+            nuij1y =  geom(t,2*k2+4);
+            nuij2x = -geom(t,2*k1+3);
+            nuij2y = -geom(t,2*k1+4);
+
+            temp1 = nuij1x*dphihx[][t] + nuij1y*dphihy[][t];
+            temp2 = nuij2x*dphihx[][t] + nuij2y*dphihy[][t];
+            if(temp1>0){
+                B(i,i) += gammaij1 * temp1;
+            }else{
+                B(i,j1) += gammaij1 * temp1;
+            }
+            if(temp2>0){
+                B(i,i) += gammaij2 * temp2;
+            }else{
+                B(i,j2) += gammaij2 * temp2;
+            }
+        }
+    }
+    Coeff = M + dt*Du*A + dt*B;
+    set(Coeff, solver=sparsesolver);
+    rhs = M*uh1[];
+    uh[] = Coeff^-1*rhs;
+    Coeff = (1.0 + dt*K1/K)*M + dt/K*Dv*A;
+    set(Coeff, solver=sparsesolver);
+    rhs1 = vh1[] + dt*K2/K*uh[];
+    rhs = M*rhs1;
+    vh[] = Coeff^-1*rhs;
+
+    uh1 = uh;
+    vh1 = vh;
+    real mass = int2d(Th)(uh1);
+    real umax = uh1[].max;
+    real umin = uh1[].min;
+    cout.precision(20);
+    cout << "mass = " << mass << ", max = " << umax << ", min = " << umin  << endl;
+    ue9=uh1;
+}
+
+real err1=sqrt(int2d(Th)((ubasic-ue1)^2));
+real err2=sqrt(int2d(Th)((ubasic-ue2)^2));
+real err3=sqrt(int2d(Th)((ubasic-ue3)^2));
+real err4=sqrt(int2d(Th)((ubasic-ue4)^2));
+real err5=sqrt(int2d(Th)((ubasic-ue5)^2));
+real err6=sqrt(int2d(Th)((ubasic-ue6)^2));
+real err7=sqrt(int2d(Th)((ubasic-ue7)^2));
+real err8=sqrt(int2d(Th)((ubasic-ue8)^2));
+real err9=sqrt(int2d(Th)((ubasic-ue9)^2));
+cout << "err1 " << err1 << ", err2 " << err2 << ", err3 " << err3 << endl;
+cout << "err4 " << err4 << ", err5 " << err5 << ", err6 " << err6 << endl;
+cout << "err7 " << err7 << ", err8 " << err8 << ", err9 " << err9 << endl;
