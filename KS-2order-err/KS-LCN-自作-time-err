@@ -1,0 +1,478 @@
+int Nx=500;
+//mesh Th = square(Nx, Nx, [2*pi*x, 2*pi*y]);
+border circle(t=0, 2*pi) {
+    x = pi + pi*cos(t); 
+    y = pi + pi*sin(t);
+}
+mesh Th = buildmesh(circle(Nx));
+
+fespace Vh(Th,P1);
+fespace Uh(Th,P0);
+int Nt=100;
+real dt=1.0e-6;
+real Du=1.0, Dv=1.0, K1=1.0, K2=1.0, K=1.0;
+macro phi(v) v //
+func u0 = 10*exp(-10*((x - pi)^2+(y - pi)^2));
+func v0 = 10*exp(-((x-pi)^2 + (y-pi)^2)/2);
+Vh uh,vh,ph,qh,uh1,vh1,uh2,vh2,phih;
+Vh uk1,uk2,vk1,vk2,duk,dvk;
+Vh ubasic,ue1,ue2,ue3,ue4,ue5,ue6,ue7,ue8,ue9;
+Vh u,v;
+Uh dphihx,dphihy;
+
+varf massM(ph,qh) = int2d(Th,qft=qf1pTlump)(ph*qh);
+varf stiffM(ph,qh) = int2d(Th)(dx(ph)*dx(qh)+dy(ph)*dy(qh));
+
+matrix M = massM(Vh,Vh);
+matrix A = stiffM(Vh,Vh);
+
+//real[int] mass(Nt);
+
+// geometric information
+int i,j,j1,j2,k1,k2;
+real[int] MV(2);
+real[int,int] geom(Th.nt,9);
+
+for(int t=0; t<Th.nt; t++){
+    for(int k=0; k<3; k++){
+        k1 = (k+1)%3;
+        k2 = (k+2)%3;
+        MV[0] = (Th[t][k1].x + Th[t][k2].x)/2.0 - Th[t][k].x;
+        MV[1] = (Th[t][k1].y + Th[t][k2].y)/2.0 - Th[t][k].y;
+        geom(t,k) = MV.l2/3.0;
+        geom(t,2*k+3) = -MV[1]/MV.l2;
+        geom(t,2*k+4) =  MV[0]/MV.l2;
+    }
+}
+
+matrix Coeff(Vh.ndof,Vh.ndof);
+matrix Coeff1(Vh.ndof,Vh.ndof);
+real[int] rhs(Vh.ndof),rhs1(Vh.ndof),rhs2(Vh.ndof);
+real[int] tmp1(Vh.ndof),tmp2(Vh.ndof),tmp3(Vh.ndof),tmp4(Vh.ndof);
+uh1 = u0;
+vh1 = v0;
+real gammaij1,gammaij2,nuij1x,nuij1y,nuij2x,nuij2y,temp1,temp2;
+real CN = 0.5;
+for (int j = 0; j <= Nt; j++) {
+    // vの更新
+    if (j == 0) {
+        Coeff = (1.0 + dt*K1/K*CN)*M + dt/K*Dv*CN*A;
+        set(Coeff, solver=sparsesolver);
+        rhs1 = vh1[] + dt*K2/K*uh1[];
+        rhs2 = dt*CN*vh1[];
+        tmp1 = M * rhs2;
+        tmp2 = A * rhs2;
+        rhs = M*rhs1;
+        rhs -=tmp1;
+        rhs -=tmp2;
+        vh[] = Coeff^-1*rhs;
+    } else if (j == 1) {
+        Coeff = (1.0 + dt*K1/K*CN)*M + dt/K*Dv*CN*A;
+        set(Coeff, solver=sparsesolver);
+        rhs1 = vh1[] + dt*K2/K*CN*uh[];
+        rhs1 += dt*K2/K*CN*uh1[];
+        rhs2 = dt*CN*vh1[];
+        tmp1 = M * rhs2;
+        tmp2 = A * rhs2;
+        rhs = M*rhs1;
+        rhs -=tmp1;
+        rhs -=tmp2;
+        vh[] = Coeff^-1*rhs;
+    } else {
+        Coeff = (1.0 + dt*CN*K1/K)*M + dt/K*CN*Dv*A;
+        set(Coeff, solver=sparsesolver);
+        rhs1 = vh2[] + dt*K2/K*uh[];
+        rhs = M*rhs1;
+        rhs2 = dt*CN*vh2[];
+        tmp1 = M * rhs2;
+        tmp2 = A * rhs2;
+        rhs -= tmp1;
+        rhs -= tmp2;
+        vh[] = Coeff^-1*rhs;
+    }
+
+    if (j == 0) {
+        plot(uh1, dim=3, fill=true, value=true, cmm="t = 0");
+        phih = phi((vh1+vh)/2);
+    } else if (j == 1) {
+        plot(uh, dim=3, fill=true, value=true, cmm="t = 0" );
+        phih = phi((vh1+vh)/2);  
+    } else {
+        plot(uh2, dim=3, fill=true, value=true, cmm="t = " + ((j-1)*dt));
+        phih = phi((3*vh2 - vh1) / 2);
+    }
+
+    // 勾配の計算
+    dphihx = dx(phih);
+    dphihy = dy(phih);
+
+    // 上流項 B の構築
+    matrix B(Vh.ndof, Vh.ndof);
+    for(int t=0; t<Th.nt; t++){
+        for(int k=0; k<3; k++){
+            k1 = (k+1)%3;
+            k2 = (k+2)%3;
+            i = Th[t][k];
+            j1 = Th[t][k1];
+            j2 = Th[t][k2];
+            gammaij1 = geom(t,k2);
+            gammaij2 = geom(t,k1);
+            nuij1x =  geom(t,2*k2+3);
+            nuij1y =  geom(t,2*k2+4);
+            nuij2x = -geom(t,2*k1+3);
+            nuij2y = -geom(t,2*k1+4);
+
+            temp1 = nuij1x*dphihx[][t] + nuij1y*dphihy[][t];
+            temp2 = nuij2x*dphihx[][t] + nuij2y*dphihy[][t];
+            if(temp1>0){
+                B(i,i) += gammaij1 * temp1;
+            }else{
+                B(i,j1) += gammaij1 * temp1;
+            }
+            if(temp2>0){
+                B(i,i) += gammaij2 * temp2;
+            }else{
+                B(i,j2) += gammaij2 * temp2;
+            }
+        }
+    }
+
+    // uの更新
+    if (j == 0) {
+        Coeff = M + dt*Du*CN*A + dt*CN*B;
+        set(Coeff, solver=sparsesolver);
+        rhs = M*uh1[];
+        rhs2 = dt*CN*uh1[];
+        tmp3 = B * rhs2;
+        tmp4 = A * rhs2;
+        rhs -= tmp3;
+        rhs -= tmp4;
+        uh[] = Coeff^-1*rhs;
+    } else if (j == 1) {
+        Coeff = M + dt*Du*CN*A + dt*CN*B;
+        set(Coeff, solver=sparsesolver);
+        rhs = M*uh1[];
+        rhs2 = dt*CN*uh1[];
+        tmp3 = B * rhs2;
+        tmp4 = A * rhs2;
+        rhs -= tmp3;
+        rhs -= tmp4;
+        uh[] = Coeff^-1*rhs;
+    } else {
+        Coeff = M + dt*Du*CN*A + dt*CN*B;
+        set(Coeff, solver=sparsesolver);
+        rhs = M*uh2[];
+        rhs2 = dt*CN*uh2[];
+        tmp3 = B * rhs2;
+        tmp4 = A * rhs2;
+        rhs -= tmp3;
+        rhs -= tmp4;
+        uh[] = Coeff^-1*rhs;
+    }
+
+    // ステップ更新
+    if (j==1){
+        vh2=vh;
+        uh2 =uh;
+    } else if (j>1) {
+        vh1 = vh2;
+        vh2 = vh;
+        uh1 = uh2;
+        uh2 = uh;
+    }
+    // 出力
+    real mass = int2d(Th)(uh2);
+    real umax = uh2[].max;
+    real umin = uh2[].min;
+    cout.precision(20);
+    cout << "mass = " << mass << ", max = " << umax << ", min = " << umin << endl;
+
+    ubasic = uh2;
+}
+
+Nt=40;
+dt=2.5e-6;
+uh1 = u0;
+vh1 = v0;
+
+for (int j = 0; j <= Nt; j++) {
+    // vの更新
+    if (j == 0) {
+        Coeff = (1.0 + dt*K1/K*CN)*M + dt/K*Dv*CN*A;
+        set(Coeff, solver=sparsesolver);
+        rhs1 = vh1[] + dt*K2/K*uh1[];
+        rhs2 = dt*CN*vh1[];
+        tmp1 = M * rhs2;
+        tmp2 = A * rhs2;
+        rhs = M*rhs1;
+        rhs -=tmp1;
+        rhs -=tmp2;
+        vh[] = Coeff^-1*rhs;
+    } else if (j == 1) {
+        Coeff = (1.0 + dt*K1/K*CN)*M + dt/K*Dv*CN*A;
+        set(Coeff, solver=sparsesolver);
+        rhs1 = vh1[] + dt*K2/K*CN*uh[];
+        rhs1 += dt*K2/K*CN*uh1[];
+        rhs2 = dt*CN*vh1[];
+        tmp1 = M * rhs2;
+        tmp2 = A * rhs2;
+        rhs = M*rhs1;
+        rhs -=tmp1;
+        rhs -=tmp2;
+        vh[] = Coeff^-1*rhs;
+    } else {
+        Coeff = (1.0 + dt*CN*K1/K)*M + dt/K*CN*Dv*A;
+        set(Coeff, solver=sparsesolver);
+        rhs1 = vh2[] + dt*K2/K*uh[];
+        rhs = M*rhs1;
+        rhs2 = dt*CN*vh2[];
+        tmp1 = M * rhs2;
+        tmp2 = A * rhs2;
+        rhs -= tmp1;
+        rhs -= tmp2;
+        vh[] = Coeff^-1*rhs;
+    }
+
+    if (j == 0) {
+        plot(uh1, dim=3, fill=true, value=true, cmm="t = 0");
+        phih = phi((vh1+vh)/2);
+    } else if (j == 1) {
+        plot(uh, dim=3, fill=true, value=true, cmm="t = 0" );
+        phih = phi((vh1+vh)/2);  
+    } else {
+        plot(uh2, dim=3, fill=true, value=true, cmm="t = " + ((j-1)*dt));
+        phih = phi((3*vh2 - vh1) / 2);
+    }
+
+    // 勾配の計算
+    dphihx = dx(phih);
+    dphihy = dy(phih);
+
+    // 上流項 B の構築
+    matrix B(Vh.ndof, Vh.ndof);
+    for(int t=0; t<Th.nt; t++){
+        for(int k=0; k<3; k++){
+            k1 = (k+1)%3;
+            k2 = (k+2)%3;
+            i = Th[t][k];
+            j1 = Th[t][k1];
+            j2 = Th[t][k2];
+            gammaij1 = geom(t,k2);
+            gammaij2 = geom(t,k1);
+            nuij1x =  geom(t,2*k2+3);
+            nuij1y =  geom(t,2*k2+4);
+            nuij2x = -geom(t,2*k1+3);
+            nuij2y = -geom(t,2*k1+4);
+
+            temp1 = nuij1x*dphihx[][t] + nuij1y*dphihy[][t];
+            temp2 = nuij2x*dphihx[][t] + nuij2y*dphihy[][t];
+            if(temp1>0){
+                B(i,i) += gammaij1 * temp1;
+            }else{
+                B(i,j1) += gammaij1 * temp1;
+            }
+            if(temp2>0){
+                B(i,i) += gammaij2 * temp2;
+            }else{
+                B(i,j2) += gammaij2 * temp2;
+            }
+        }
+    }
+
+    // uの更新
+    if (j == 0) {
+        Coeff = M + dt*Du*CN*A + dt*CN*B;
+        set(Coeff, solver=sparsesolver);
+        rhs = M*uh1[];
+        rhs2 = dt*CN*uh1[];
+        tmp3 = B * rhs2;
+        tmp4 = A * rhs2;
+        rhs -= tmp3;
+        rhs -= tmp4;
+        uh[] = Coeff^-1*rhs;
+    } else if (j == 1) {
+        Coeff = M + dt*Du*CN*A + dt*CN*B;
+        set(Coeff, solver=sparsesolver);
+        rhs = M*uh1[];
+        rhs2 = dt*CN*uh1[];
+        tmp3 = B * rhs2;
+        tmp4 = A * rhs2;
+        rhs -= tmp3;
+        rhs -= tmp4;
+        uh[] = Coeff^-1*rhs;
+    } else {
+        Coeff = M + dt*Du*CN*A + dt*CN*B;
+        set(Coeff, solver=sparsesolver);
+        rhs = M*uh2[];
+        rhs2 = dt*CN*uh2[];
+        tmp3 = B * rhs2;
+        tmp4 = A * rhs2;
+        rhs -= tmp3;
+        rhs -= tmp4;
+        uh[] = Coeff^-1*rhs;
+    }
+
+    // ステップ更新
+    if (j==1){
+        vh2=vh;
+        uh2 =uh;
+    } else if (j>1) {
+        vh1 = vh2;
+        vh2 = vh;
+        uh1 = uh2;
+        uh2 = uh;
+    }
+    // 出力
+    real mass = int2d(Th)(uh2);
+    real umax = uh2[].max;
+    real umin = uh2[].min;
+    cout.precision(20);
+    cout << "mass = " << mass << ", max = " << umax << ", min = " << umin << endl;
+
+    ue1 = uh2;
+}
+
+Nt=20;
+dt=5.0e-6;
+uh1 = u0;
+vh1 = v0;
+
+for (int j = 0; j <= Nt; j++) {
+    // vの更新
+    if (j == 0) {
+        Coeff = (1.0 + dt*K1/K*CN)*M + dt/K*Dv*CN*A;
+        set(Coeff, solver=sparsesolver);
+        rhs1 = vh1[] + dt*K2/K*uh1[];
+        rhs2 = dt*CN*vh1[];
+        tmp1 = M * rhs2;
+        tmp2 = A * rhs2;
+        rhs = M*rhs1;
+        rhs -=tmp1;
+        rhs -=tmp2;
+        vh[] = Coeff^-1*rhs;
+    } else if (j == 1) {
+        Coeff = (1.0 + dt*K1/K*CN)*M + dt/K*Dv*CN*A;
+        set(Coeff, solver=sparsesolver);
+        rhs1 = vh1[] + dt*K2/K*CN*uh[];
+        rhs1 += dt*K2/K*CN*uh1[];
+        rhs2 = dt*CN*vh1[];
+        tmp1 = M * rhs2;
+        tmp2 = A * rhs2;
+        rhs = M*rhs1;
+        rhs -=tmp1;
+        rhs -=tmp2;
+        vh[] = Coeff^-1*rhs;
+    } else {
+        Coeff = (1.0 + dt*CN*K1/K)*M + dt/K*CN*Dv*A;
+        set(Coeff, solver=sparsesolver);
+        rhs1 = vh2[] + dt*K2/K*uh[];
+        rhs = M*rhs1;
+        rhs2 = dt*CN*vh2[];
+        tmp1 = M * rhs2;
+        tmp2 = A * rhs2;
+        rhs -= tmp1;
+        rhs -= tmp2;
+        vh[] = Coeff^-1*rhs;
+    }
+
+    if (j == 0) {
+        plot(uh1, dim=3, fill=true, value=true, cmm="t = 0");
+        phih = phi((vh1+vh)/2);
+    } else if (j == 1) {
+        plot(uh, dim=3, fill=true, value=true, cmm="t = 0" );
+        phih = phi((vh1+vh)/2);  
+    } else {
+        plot(uh2, dim=3, fill=true, value=true, cmm="t = " + ((j-1)*dt));
+        phih = phi((3*vh2 - vh1) / 2);
+    }
+
+    // 勾配の計算
+    dphihx = dx(phih);
+    dphihy = dy(phih);
+
+    // 上流項 B の構築
+    matrix B(Vh.ndof, Vh.ndof);
+    for(int t=0; t<Th.nt; t++){
+        for(int k=0; k<3; k++){
+            k1 = (k+1)%3;
+            k2 = (k+2)%3;
+            i = Th[t][k];
+            j1 = Th[t][k1];
+            j2 = Th[t][k2];
+            gammaij1 = geom(t,k2);
+            gammaij2 = geom(t,k1);
+            nuij1x =  geom(t,2*k2+3);
+            nuij1y =  geom(t,2*k2+4);
+            nuij2x = -geom(t,2*k1+3);
+            nuij2y = -geom(t,2*k1+4);
+
+            temp1 = nuij1x*dphihx[][t] + nuij1y*dphihy[][t];
+            temp2 = nuij2x*dphihx[][t] + nuij2y*dphihy[][t];
+            if(temp1>0){
+                B(i,i) += gammaij1 * temp1;
+            }else{
+                B(i,j1) += gammaij1 * temp1;
+            }
+            if(temp2>0){
+                B(i,i) += gammaij2 * temp2;
+            }else{
+                B(i,j2) += gammaij2 * temp2;
+            }
+        }
+    }
+
+    // uの更新
+    if (j == 0) {
+        Coeff = M + dt*Du*CN*A + dt*CN*B;
+        set(Coeff, solver=sparsesolver);
+        rhs = M*uh1[];
+        rhs2 = dt*CN*uh1[];
+        tmp3 = B * rhs2;
+        tmp4 = A * rhs2;
+        rhs -= tmp3;
+        rhs -= tmp4;
+        uh[] = Coeff^-1*rhs;
+    } else if (j == 1) {
+        Coeff = M + dt*Du*CN*A + dt*CN*B;
+        set(Coeff, solver=sparsesolver);
+        rhs = M*uh1[];
+        rhs2 = dt*CN*uh1[];
+        tmp3 = B * rhs2;
+        tmp4 = A * rhs2;
+        rhs -= tmp3;
+        rhs -= tmp4;
+        uh[] = Coeff^-1*rhs;
+    } else {
+        Coeff = M + dt*Du*CN*A + dt*CN*B;
+        set(Coeff, solver=sparsesolver);
+        rhs = M*uh2[];
+        rhs2 = dt*CN*uh2[];
+        tmp3 = B * rhs2;
+        tmp4 = A * rhs2;
+        rhs -= tmp3;
+        rhs -= tmp4;
+        uh[] = Coeff^-1*rhs;
+    }
+
+    // ステップ更新
+    if (j==1){
+        vh2=vh;
+        uh2 =uh;
+    } else if (j>1) {
+        vh1 = vh2;
+        vh2 = vh;
+        uh1 = uh2;
+        uh2 = uh;
+    }
+    // 出力
+    real mass = int2d(Th)(uh2);
+    real umax = uh2[].max;
+    real umin = uh2[].min;
+    cout.precision(20);
+    cout << "mass = " << mass << ", max = " << umax << ", min = " << umin << endl;
+
+    ue2 = uh2;
+}
+real err1=sqrt(int2d(Th)((ubasic-ue1)^2));
+real err2=sqrt(int2d(Th)((ubasic-ue2)^2));
+cout << "err1 " << err1 << ", err2 " << err2 << endl;
